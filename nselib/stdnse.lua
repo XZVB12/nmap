@@ -97,7 +97,7 @@ end
 -- If known, the output includes some context based information: the script
 -- identifier and the target ip/port (if there is one). If the debug level is
 -- at least 2, it also prints the base thread identifier and whether it is a
--- worker thread or the master thread.
+-- worker thread or the controller thread.
 --
 -- @class function
 -- @name debug
@@ -324,6 +324,10 @@ function tohex( s, options )
   return hex
 end
 
+
+local fromhex_helper = function (h)
+  return char(tonumber(h, 16))
+end
 ---Decode a hexadecimal string to raw bytes
 --
 -- The string can contain any amount of whitespace and capital or lowercase
@@ -334,25 +338,23 @@ end
 -- @return A string of bytes or nil if string could not be decoded
 -- @return Error message if string could not be decoded
 function fromhex (hex)
-  local len = #hex
-  local out = {}
-  local i = 1
-  while i <= len do
-    local p, q, c1, c2 = find(hex, "^%s*(%x)%s*(%x)%s*", i)
-    if not p then
-      return nil, format("Invalid characters or odd number of hex digits at %d", i)
-    end
-    out[#out+1] = char(tonumber(c1..c2, 16))
-    i = q + 1
+  local p = hex:find("[^%x%s]")
+  if p then
+    return nil, "Invalid hexadecimal digits at position " .. p
   end
-  return concat(out)
+  hex = hex:gsub("%s+", "")
+  if #hex % 2 ~= 0 then
+    return nil, "Odd number of hexadecimal digits"
+  end
+  return hex:gsub("..", fromhex_helper)
 end
 
+local colonsep = {separator=":"}
 ---Format a MAC address as colon-separated hex bytes.
 --@param mac The MAC address in binary, such as <code>host.mac_addr</code>
 --@return The MAC address in XX:XX:XX:XX:XX:XX format
 function format_mac(mac)
-  return tohex(mac, {separator=":"})
+  return tohex(mac, colonsep)
 end
 
 ---Either return the string itself, or return "<blank>" (or the value of the second parameter) if the string
@@ -373,6 +375,7 @@ function string_or_blank(string, blank)
   end
 end
 
+local timespec_multipliers = {[""] = 1, s = 1, m = 60, h = 60 * 60, ms = 0.001}
 ---
 -- Parses a time duration specification, which is a number followed by a
 -- unit, and returns a number of seconds.
@@ -400,7 +403,6 @@ end
 function parse_timespec(timespec)
   if timespec == nil then return nil, "Can't parse nil timespec" end
   local n, unit, t, m
-  local multipliers = {[""] = 1, s = 1, m = 60, h = 60 * 60, ms = 0.001}
 
   n, unit = match(timespec, "^([%d.]+)(.*)$")
   if not n then
@@ -412,7 +414,7 @@ function parse_timespec(timespec)
     return nil, format("Can't parse time specification \"%s\" (bad number \"%s\")", timespec, n)
   end
 
-  m = multipliers[unit]
+  m = timespec_multipliers[unit]
   if not m then
     return nil, format("Can't parse time specification \"%s\" (bad unit \"%s\")", timespec, unit)
   end
